@@ -1,8 +1,12 @@
-from fastapi import FastAPI, HTTPException, Path, Depends
+from fastapi import FastAPI, HTTPException, Path, Depends, Query, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Optional, Union
+from datetime import date
+from sqlalchemy.orm import Session
+import traceback
 
 from .services.scheduler import SchedulerService
+from .services.holiday_service import HolidayService
 from .models.schemas import (
     GroupCreate,
     PersonCreate,
@@ -11,6 +15,7 @@ from .models.schemas import (
     Schedule,
     Group
 )
+from .models.holiday import Holiday, HolidayBulkUpload, CSVHolidayUpload
 from .config.settings import Settings, get_settings
 from .utils.exceptions import (
     GroupNotFoundException,
@@ -19,6 +24,10 @@ from .utils.exceptions import (
     InvalidScheduleError
 )
 from .utils.logging import logger
+from .config.database import get_db, Base, engine
+
+# Create tables if they don't exist
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 scheduler = SchedulerService()
@@ -36,6 +45,235 @@ def configure_cors(app: FastAPI, settings: Settings):
 # Configure application
 settings = get_settings()
 configure_cors(app, settings)
+
+# Holiday Management Endpoints
+
+@app.post("/holidays", status_code=status.HTTP_201_CREATED)
+async def create_holiday(
+    holiday: Holiday,
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Create a new holiday"""
+    try:
+        holiday_service = HolidayService(db)
+        db_holiday = holiday_service.create_holiday(holiday)
+        return {
+            "id": db_holiday.id,
+            "start_date": db_holiday.start_date,
+            "end_date": db_holiday.end_date,
+            "name": db_holiday.name
+        }
+    except Exception as e:
+        logger.error(f"Error creating holiday: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating holiday: {str(e)}"
+        )
+
+@app.post("/holidays/bulk", status_code=status.HTTP_201_CREATED)
+async def bulk_create_holidays(
+    data: HolidayBulkUpload,
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Upload multiple holidays at once"""
+    try:
+        holiday_service = HolidayService(db)
+        db_holidays = holiday_service.bulk_create_holidays(data.holidays)
+        return {
+            "message": f"Successfully created {len(db_holidays)} holidays",
+            "created_count": len(db_holidays)
+        }
+    except Exception as e:
+        logger.error(f"Error creating bulk holidays: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating bulk holidays: {str(e)}"
+        )
+
+@app.post("/holidays/upload/csv", status_code=status.HTTP_201_CREATED)
+async def upload_holidays_csv(
+    file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Upload holidays from a CSV file"""
+    try:
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only CSV files are supported"
+            )
+        
+        # Read the CSV content
+        csv_content = await file.read()
+        csv_str = csv_content.decode("utf-8")
+        
+        # Parse the CSV
+        csv_upload = CSVHolidayUpload(csv_content=csv_str)
+        holidays = csv_upload.parse_csv()
+        
+        if not holidays:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid holidays found in CSV"
+            )
+        
+        # Create the holidays
+        holiday_service = HolidayService(db)
+        db_holidays = holiday_service.bulk_create_holidays(holidays)
+        
+        return {
+            "message": f"Successfully created {len(db_holidays)} holidays from CSV",
+            "created_count": len(db_holidays)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading CSV: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading CSV: {str(e)}"
+        )
+
+@app.get("/holidays")
+async def get_holidays(
+    year: Optional[int] = Query(None, description="Filter by year"),
+    start_date: Optional[date] = Query(None, description="Filter by start date"),
+    end_date: Optional[date] = Query(None, description="Filter by end date"),
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> List[Dict]:
+    """Get holidays with optional filtering"""
+    try:
+        holiday_service = HolidayService(db)
+        
+        if year is not None:
+            db_holidays = holiday_service.get_holidays_by_year(year)
+        elif start_date is not None and end_date is not None:
+            db_holidays = holiday_service.get_holidays_by_date_range(start_date, end_date)
+        else:
+            # Default to current year if no filters provided
+            current_year = date.today().year
+            db_holidays = holiday_service.get_holidays_by_year(current_year)
+        
+        return [
+            {
+                "id": holiday.id,
+                "start_date": holiday.start_date,
+                "end_date": holiday.end_date,
+                "name": holiday.name
+            }
+            for holiday in db_holidays
+        ]
+    except Exception as e:
+        logger.error(f"Error retrieving holidays: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving holidays: {str(e)}"
+        )
+
+@app.get("/holidays/{holiday_id}")
+async def get_holiday(
+    holiday_id: int,
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Get a specific holiday by ID"""
+    try:
+        holiday_service = HolidayService(db)
+        holiday = holiday_service.get_holiday(holiday_id)
+        
+        if holiday is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Holiday with ID {holiday_id} not found"
+            )
+        
+        return {
+            "id": holiday.id,
+            "start_date": holiday.start_date,
+            "end_date": holiday.end_date,
+            "name": holiday.name
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving holiday: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving holiday: {str(e)}"
+        )
+
+@app.put("/holidays/{holiday_id}")
+async def update_holiday(
+    holiday_id: int,
+    holiday: Holiday,
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Update an existing holiday"""
+    try:
+        holiday_service = HolidayService(db)
+        updated_holiday = holiday_service.update_holiday(holiday_id, holiday)
+        
+        if updated_holiday is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Holiday with ID {holiday_id} not found"
+            )
+        
+        return {
+            "id": updated_holiday.id,
+            "start_date": updated_holiday.start_date,
+            "end_date": updated_holiday.end_date,
+            "name": updated_holiday.name
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating holiday: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating holiday: {str(e)}"
+        )
+
+@app.delete("/holidays/{holiday_id}")
+async def delete_holiday(
+    holiday_id: int,
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """Delete a holiday"""
+    try:
+        holiday_service = HolidayService(db)
+        success = holiday_service.delete_holiday(holiday_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Holiday with ID {holiday_id} not found"
+            )
+        
+        return {"message": f"Holiday with ID {holiday_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting holiday: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting holiday: {str(e)}"
+        )
+
+# Original Scheduler Endpoints
 
 @app.post("/groups/bulk")
 async def bulk_add_groups(

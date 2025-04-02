@@ -22,10 +22,8 @@ wheels/
 
 # Virtual Environment
 venv/
-env/
 ENV/
-
-# Environment Variables
+env/
 .env
 
 # IDE
@@ -34,21 +32,20 @@ ENV/
 *.swp
 *.swo
 
-# Node
-node_modules/
-.npm
-yarn-debug.log*
-yarn-error.log*
-
-# Build
-dist/
-build/
-
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+logs/
+*.log
+server_logs.txt
 
 # Database
 *.db
 *.sqlite3
-*.sqlite
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.coverage.*
+coverage.xml
+*.cover
