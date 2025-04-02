@@ -5,12 +5,14 @@ from sqlalchemy import func, case
 from statistics import stdev, StatisticsError
 from app.models.assignment_history import AssignmentHistory, AssignmentStats
 from app.models.assignment_history_db import AssignmentHistoryDB, DayType
+from app.services.day_weight_service import DayWeightService
 
 class AssignmentHistoryService:
     """Service for managing assignment history and fairness tracking"""
     
     def __init__(self, db: Session):
         self.db = db
+        self.weight_service = DayWeightService()
     
     def record_assignment(self, assignment: AssignmentHistory) -> AssignmentHistory:
         """Record a new assignment and update cumulative statistics"""
@@ -30,19 +32,25 @@ class AssignmentHistoryService:
         cumulative_weighted_days = (latest.cumulative_weighted_days if latest else 0.0)
         cumulative_total_days = (latest.cumulative_total_days if latest else 0)
         
+        # Calculate weight based on day type
+        weight = self.weight_service.calculate_weight(
+            target_date=assignment.assignment_date,
+            day_type=assignment.day_type
+        )
+        
         # Update stats based on the new assignment
         if assignment.day_type == DayType.REGULAR:
             cumulative_regular_days += 1
-        cumulative_weighted_days += assignment.weight
+        cumulative_weighted_days += weight
         cumulative_total_days += 1
         
         # Create new record
         db_assignment = AssignmentHistoryDB(
             person=assignment.person,
             group_id=assignment.group_id,
-            date=assignment.assignment_date,  # Map assignment_date to date
+            date=assignment.assignment_date,
             day_type=assignment.day_type,
-            weight=assignment.weight,
+            weight=weight,
             cumulative_regular_days=cumulative_regular_days,
             cumulative_weighted_days=cumulative_weighted_days,
             cumulative_total_days=cumulative_total_days
@@ -56,7 +64,7 @@ class AssignmentHistoryService:
         return AssignmentHistory(
             person=db_assignment.person,
             group_id=db_assignment.group_id,
-            assignment_date=db_assignment.date,  # Map date back to assignment_date
+            assignment_date=db_assignment.date,
             day_type=db_assignment.day_type,
             weight=db_assignment.weight,
             cumulative_regular_days=db_assignment.cumulative_regular_days,

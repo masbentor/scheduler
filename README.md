@@ -98,7 +98,24 @@ This system implements a fair scheduling solution with comprehensive holiday man
 - ✅ Multi-day holiday support
 - ✅ Automatic validation of date ranges
 
-### 2. Database Schema
+### 2. Assignment Tracking
+- ✅ Track assignments by person, date, and day type
+- ✅ Store historical assignment data
+- ✅ Calculate and maintain cumulative statistics
+- ✅ Support for different day types (regular, Friday, weekend, holiday)
+
+### 3. Weight System
+- ✅ Configurable weights for different day types:
+  - Regular weekdays: 1.0 (base weight)
+  - Fridays: 1.2
+  - Weekends: 1.5
+  - Holidays: 2.0
+  - Long weekend middle days: 2.5
+- ✅ Automatic weight calculation based on day type
+- ✅ Special handling for holidays on weekends
+- ✅ Support for custom weight configuration
+
+### 4. Database Schema
 The system uses SQLite with SQLAlchemy ORM and includes the following tables:
 
 #### Holidays Table
@@ -111,7 +128,7 @@ CREATE TABLE holidays (
 );
 ```
 
-### 3. API Endpoints
+### 5. API Endpoints
 
 #### Holiday Management
 
