@@ -115,6 +115,120 @@ This system implements a fair scheduling solution with comprehensive holiday man
 - ✅ Automatic weight calculation based on day type
 - ✅ Special handling for holidays on weekends
 - ✅ Support for custom weight configuration
+- ✅ Intelligent long weekend detection
+
+### 4. Scheduling System
+- ✅ Group management with bulk operations
+- ✅ Person assignment to groups with constraints
+- ✅ Min/max days constraints per person
+- ✅ No consecutive days assignment
+- ✅ Fair distribution of regular and weighted days
+- ✅ Historical assignment tracking
+- ✅ Basic fairness metrics tracking
+
+### 5. Fairness Metrics
+- ✅ Track year-to-date statistics per person:
+  - Regular weekday assignments
+  - Friday assignments
+  - Weekend assignments
+  - Holiday assignments
+  - Long weekend assignments
+- ✅ Calculate fairness scores (0-1 scale):
+  - Regular fairness score
+  - Weighted fairness score
+  - Overall fairness score
+- ✅ Group-level metrics:
+  - Weighted standard deviation
+  - Maximum weighted difference
+  - Maximum total assignment difference
+
+### 6. Database Schema
+The system uses SQLite with SQLAlchemy ORM and includes the following tables:
+- ✅ holidays: Store holiday information
+- ✅ assignment_history: Track all assignments with weights
+- ✅ fairness_metrics: Store fairness scores and YTD statistics
+
+## Upcoming Features
+- [ ] Enhanced fairness balancing with more sophisticated algorithms
+- [ ] Advanced warning system for uneven distributions
+- [ ] Detailed statistical reports and visualizations
+- [ ] Enhanced soft constraints implementation
+- [ ] API endpoints for detailed fairness metrics analysis
+- [ ] Dashboard for monitoring fairness metrics
+
+## Getting Started
+
+1. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+
+2. Set up a virtual environment:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # or
+   .\venv\Scripts\activate  # Windows
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Run the application:
+   ```bash
+   python -m uvicorn app.main:app --reload
+   ```
+
+5. Access the API documentation at:
+   - http://localhost:8000/docs
+   - http://localhost:8000/redoc
+
+## API Testing
+
+A simple test script is provided to verify API functionality:
+
+```bash
+python backend/test_api.py
+```
+
+## License
+
+MIT
+
+# Fair Scheduling System with Holiday Management
+
+## Overview
+This system implements a fair scheduling solution with comprehensive holiday management capabilities. It ensures equitable distribution of work assignments while accounting for holidays, weekends, and special scheduling considerations.
+
+## Features Implemented
+
+### 1. Holiday Management
+- ✅ Single holiday creation, retrieval, update, and deletion
+- ✅ Bulk holiday upload support
+- ✅ CSV import functionality
+- ✅ Date range and year-based filtering
+- ✅ Multi-day holiday support
+- ✅ Automatic validation of date ranges
+
+### 2. Assignment Tracking
+- ✅ Track assignments by person, date, and day type
+- ✅ Store historical assignment data
+- ✅ Calculate and maintain cumulative statistics
+- ✅ Support for different day types (regular, Friday, weekend, holiday, long weekend middle)
+- ✅ Long weekend detection and middle day identification
+
+### 3. Weight System
+- ✅ Configurable weights for different day types:
+  - Regular weekdays: 1.0 (base weight)
+  - Fridays: 1.2
+  - Weekends: 1.5
+  - Holidays: 2.0
+  - Long weekend middle days: 2.5
+- ✅ Automatic weight calculation based on day type
+- ✅ Special handling for holidays on weekends
+- ✅ Support for custom weight configuration
 - ✅ Intelligent long weekend detection:
   - Identifies holiday periods of 3 or more days
   - Automatically detects and assigns higher weights to middle days

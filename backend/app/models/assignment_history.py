@@ -26,4 +26,45 @@ class AssignmentStats(BaseModel):
     total_weighted_score: float = Field(0.0, description="Total weighted score of all assignments")
     total_assignments: int = Field(0, description="Total number of assignments")
     
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
+
+class FairnessMetrics(BaseModel):
+    """Model for tracking fairness metrics per person"""
+    person: str = Field(..., description="Name of the person")
+    group_id: str = Field(..., description="ID of the group the person belongs to")
+    
+    # Year-to-date statistics
+    ytd_regular_days: int = Field(0, description="Year-to-date regular weekday assignments")
+    ytd_friday_days: int = Field(0, description="Year-to-date Friday assignments")
+    ytd_weekend_days: int = Field(0, description="Year-to-date weekend assignments")
+    ytd_holiday_days: int = Field(0, description="Year-to-date holiday assignments")
+    ytd_long_weekend_days: int = Field(0, description="Year-to-date long weekend middle day assignments")
+    ytd_weighted_score: float = Field(0.0, description="Year-to-date total weighted score")
+    ytd_total_assignments: int = Field(0, description="Year-to-date total assignments")
+    
+    # Fairness scores
+    fairness_score: float = Field(0.0, description="Overall fairness score (0-1)")
+    weighted_fairness_score: float = Field(0.0, description="Fairness score for weighted days (0-1)")
+    regular_fairness_score: float = Field(0.0, description="Fairness score for regular days (0-1)")
+    
+    # Last assignment info
+    last_assignment_date: Optional[date] = Field(None, description="Date of last assignment")
+    days_since_last_assignment: int = Field(0, description="Days since last assignment")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+    def calculate_fairness_scores(self, group_averages: AssignmentStats) -> None:
+        """Calculate fairness scores based on group averages"""
+        if group_averages.total_assignments == 0:
+            return
+
+        # Calculate regular days fairness
+        if group_averages.regular_days > 0:
+            self.regular_fairness_score = min(1.0, self.ytd_regular_days / group_averages.regular_days)
+
+        # Calculate weighted days fairness
+        if group_averages.total_weighted_score > 0:
+            self.weighted_fairness_score = min(1.0, self.ytd_weighted_score / group_averages.total_weighted_score)
+
+        # Overall fairness is average of regular and weighted scores
+        self.fairness_score = (self.regular_fairness_score + self.weighted_fairness_score) / 2 

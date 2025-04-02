@@ -16,17 +16,6 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
-    # Create enum type for day types
-    op.execute("""
-        CREATE TYPE daytype AS ENUM (
-            'regular',
-            'friday',
-            'weekend',
-            'holiday',
-            'long_weekend_middle'
-        )
-    """)
-    
     # Create assignment history table
     op.create_table(
         'assignment_history',
@@ -34,13 +23,13 @@ def upgrade() -> None:
         sa.Column('person', sa.String(), nullable=False),
         sa.Column('group_id', sa.String(), nullable=False),
         sa.Column('date', sa.Date(), nullable=False),
-        sa.Column('day_type', sa.Enum('regular', 'friday', 'weekend', 'holiday', 'long_weekend_middle', name='daytype'), nullable=False),
+        sa.Column('day_type', sa.String(), nullable=False),
         sa.Column('weight', sa.Float(), nullable=False),
         sa.Column('cumulative_regular_days', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('cumulative_weighted_days', sa.Float(), nullable=False, server_default='0'),
+        sa.Column('cumulative_weighted_days', sa.Float(), nullable=False, server_default='0.0'),
         sa.Column('cumulative_total_days', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.Date(), server_default=sa.text('CURRENT_DATE')),
-        sa.Column('updated_at', sa.Date(), server_default=sa.text('CURRENT_DATE')),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
         sa.PrimaryKeyConstraint('id')
     )
     
@@ -57,6 +46,3 @@ def downgrade() -> None:
     
     # Drop table
     op.drop_table('assignment_history')
-    
-    # Drop enum type
-    op.execute('DROP TYPE daytype')
