@@ -102,7 +102,8 @@ This system implements a fair scheduling solution with comprehensive holiday man
 - ✅ Track assignments by person, date, and day type
 - ✅ Store historical assignment data
 - ✅ Calculate and maintain cumulative statistics
-- ✅ Support for different day types (regular, Friday, weekend, holiday)
+- ✅ Support for different day types (regular, Friday, weekend, holiday, long weekend middle)
+- ✅ Long weekend detection and middle day identification
 
 ### 3. Weight System
 - ✅ Configurable weights for different day types:
@@ -114,6 +115,10 @@ This system implements a fair scheduling solution with comprehensive holiday man
 - ✅ Automatic weight calculation based on day type
 - ✅ Special handling for holidays on weekends
 - ✅ Support for custom weight configuration
+- ✅ Intelligent long weekend detection:
+  - Identifies holiday periods of 3 or more days
+  - Automatically detects and assigns higher weights to middle days
+  - Handles overlapping holidays and special cases
 
 ### 4. Database Schema
 The system uses SQLite with SQLAlchemy ORM and includes the following tables:
@@ -285,3 +290,43 @@ Upcoming features:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+### 6. Long Weekend Management
+
+The system includes sophisticated long weekend detection and management:
+
+1. **Long Weekend Detection**
+   - Automatically identifies holiday periods of 3 or more days
+   - Considers both single holidays and multi-day holiday periods
+   - Handles month transitions and year boundaries
+
+2. **Middle Day Identification**
+   - Detects middle days within long holiday periods
+   - Assigns higher weights to middle days (2.5)
+   - Excludes start and end dates of holiday periods
+
+3. **Integration with Weight System**
+   - Seamless integration with the day weight calculation
+   - Prioritizes long weekend middle day weights over regular holiday weights
+   - Maintains consistent weight assignments across all day types
+
+4. **Period Analysis**
+   - Analyzes date ranges to determine day types
+   - Considers holidays, weekends, and long weekend periods
+   - Provides comprehensive day type classification
+
+5. **Usage Example**
+   ```python
+   # Example of how the system handles a 4-day Easter holiday
+   holiday = Holiday(
+       start_date="2024-03-29",  # Good Friday
+       end_date="2024-04-01",    # Easter Monday
+       name="Easter"
+   )
+   
+   # Weight assignments:
+   # March 29 (Good Friday): 2.0 (holiday)
+   # March 30 (Saturday): 2.5 (middle day)
+   # March 31 (Sunday): 2.5 (middle day)
+   # April 1 (Monday): 2.0 (holiday)
+   ```

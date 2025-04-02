@@ -2,10 +2,39 @@ from datetime import date
 import pytest
 from app.services.day_weight_service import DayWeightService
 from app.models.assignment_history_db import DayType
+from app.models.holiday import Holiday
 
 @pytest.fixture
 def weight_service():
     return DayWeightService()
+
+@pytest.fixture
+def sample_holidays():
+    return [
+        # Single day holiday
+        Holiday(start_date=date(2024, 2, 6), name="Regular Holiday"),
+        
+        # 4-day Easter holiday
+        Holiday(
+            start_date=date(2024, 3, 29),
+            end_date=date(2024, 4, 1),
+            name="Easter"
+        ),
+        
+        # 2-day bridge holiday
+        Holiday(
+            start_date=date(2024, 5, 23),
+            end_date=date(2024, 5, 24),
+            name="Bridge Holiday"
+        ),
+        
+        # 3-day New Year holiday
+        Holiday(
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 3),
+            name="New Year Holiday"
+        )
+    ]
 
 def test_base_weights(weight_service):
     """Test the default base weights for different day types"""
@@ -28,22 +57,49 @@ def test_invalid_weight():
     with pytest.raises(ValueError):
         service.set_weight(DayType.REGULAR, -1)
 
-def test_day_type_detection(weight_service):
-    """Test day type detection for different dates"""
-    # Monday (regular day)
-    assert weight_service.get_day_type(date(2024, 1, 1)) == DayType.REGULAR
+def test_weight_calculation(weight_service, sample_holidays):
+    """Test weight calculation for different scenarios"""
+    # Regular day (Thursday)
+    assert weight_service.calculate_weight(
+        date(2024, 3, 28),
+        sample_holidays
+    ) == 1.0
     
     # Friday
-    assert weight_service.get_day_type(date(2024, 1, 5)) == DayType.FRIDAY
+    assert weight_service.calculate_weight(
+        date(2024, 3, 22),
+        sample_holidays
+    ) == 1.2
     
-    # Saturday (weekend)
-    assert weight_service.get_day_type(date(2024, 1, 6)) == DayType.WEEKEND
+    # Regular weekend (Sunday)
+    assert weight_service.calculate_weight(
+        date(2024, 3, 24),
+        sample_holidays
+    ) == 1.5
     
-    # Sunday (weekend)
-    assert weight_service.get_day_type(date(2024, 1, 7)) == DayType.WEEKEND
+    # Regular holiday (Tuesday)
+    assert weight_service.calculate_weight(
+        date(2024, 2, 6),
+        sample_holidays
+    ) == 2.0
     
-    # Holiday overrides other types
-    assert weight_service.get_day_type(date(2024, 1, 1), is_holiday=True) == DayType.HOLIDAY
+    # Holiday on weekend (Easter Sunday)
+    assert weight_service.calculate_weight(
+        date(2024, 3, 31),
+        sample_holidays
+    ) == 2.5  # Middle day of Easter holiday
+    
+    # Middle day of long holiday (Easter Saturday)
+    assert weight_service.calculate_weight(
+        date(2024, 3, 30),
+        sample_holidays
+    ) == 2.5
+    
+    # Middle day of New Year holiday
+    assert weight_service.calculate_weight(
+        date(2024, 1, 2),
+        sample_holidays
+    ) == 2.5
 
 def test_weekend_detection(weight_service):
     """Test weekend detection"""
@@ -67,41 +123,19 @@ def test_friday_detection(weight_service):
     # Friday
     assert weight_service.is_friday(date(2024, 1, 5))      # Friday
 
-def test_weight_calculation(weight_service):
-    """Test weight calculation for different scenarios"""
-    # Regular day
-    assert weight_service.calculate_weight(
-        date(2024, 1, 1),  # Monday
-        DayType.REGULAR
-    ) == 1.0
+def test_day_type_detection(weight_service):
+    """Test day type detection for different dates"""
+    # Monday (regular day)
+    assert weight_service.get_day_type(date(2024, 1, 1)) == DayType.REGULAR
     
     # Friday
-    assert weight_service.calculate_weight(
-        date(2024, 1, 5),  # Friday
-        DayType.FRIDAY
-    ) == 1.2
+    assert weight_service.get_day_type(date(2024, 1, 5)) == DayType.FRIDAY
     
-    # Weekend
-    assert weight_service.calculate_weight(
-        date(2024, 1, 6),  # Saturday
-        DayType.WEEKEND
-    ) == 1.5
+    # Saturday (weekend)
+    assert weight_service.get_day_type(date(2024, 1, 6)) == DayType.WEEKEND
     
-    # Holiday
-    assert weight_service.calculate_weight(
-        date(2024, 1, 1),  # Monday holiday
-        DayType.HOLIDAY
-    ) == 2.0
+    # Sunday (weekend)
+    assert weight_service.get_day_type(date(2024, 1, 7)) == DayType.WEEKEND
     
-    # Holiday on weekend (should use higher weight)
-    assert weight_service.calculate_weight(
-        date(2024, 1, 6),  # Saturday holiday
-        DayType.HOLIDAY
-    ) == 2.0
-    
-    # Long weekend middle day
-    assert weight_service.calculate_weight(
-        date(2024, 1, 1),
-        DayType.REGULAR,
-        is_long_weekend_middle=True
-    ) == 2.5 
+    # Holiday overrides other types
+    assert weight_service.get_day_type(date(2024, 1, 1), is_holiday=True) == DayType.HOLIDAY 
