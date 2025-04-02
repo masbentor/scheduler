@@ -1,93 +1,138 @@
 # Scheduler Backend
 
-This is the backend service for the Scheduler application, built with FastAPI.
+A FastAPI-based backend service for managing group schedules. This is the consolidated backend service that combines functionality from both previous backends.
 
 ## Features
 
-- Group management
-- Person assignment to groups
-- Schedule generation
-- RESTful API
+- Group management (create, delete, list)
+- Person management (add to group, remove from group)
+- Schedule generation with fair distribution
+- Bulk operations support
+- Comprehensive error handling
+- Logging
+- Configuration management
+- Type safety with Pydantic models
+- Database persistence with SQLAlchemy
+- Holiday handling
 
-## Setup
+## Project Structure
+
+```
+backend/
+├── app/
+│   ├── api/            # API routes
+│   ├── models/         # Pydantic models
+│   ├── services/       # Business logic
+│   ├── utils/          # Utilities
+│   ├── config/         # Configuration
+│   └── main.py        # FastAPI application
+├── tests/             # Test files
+├── requirements.txt   # Dependencies
+└── README.md         # This file
+```
+
+## Installation
 
 1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows use: .\venv\Scripts\activate
-```
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # or
+   .\venv\Scripts\activate  # Windows
+   ```
 
 2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-3. Create a .env file with the following content:
+## Configuration
+
+Create a `.env` file in the root directory with the following variables:
 ```env
-APP_NAME=Scheduler
-VERSION=1.0.0
-ALLOWED_ORIGINS=["http://localhost:3000"]
+DEBUG=False
+ALLOWED_ORIGINS=["http://localhost:5173"]
+MIN_GROUP_MEMBERS=2
 ```
 
-4. Run the application:
-```bash
-uvicorn app.main:app --reload
-```
+## Running the Application
 
-## API Documentation
+1. Start the server:
+   ```bash
+   uvicorn app.main:app --reload
+   ```
 
-Once the application is running, you can access:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+2. Access the API documentation at:
+   - Swagger UI: http://localhost:8000/docs
+   - ReDoc: http://localhost:8000/redoc
 
-## Endpoints
+## API Endpoints
 
 ### Groups
-- POST /groups/bulk - Add multiple groups
-- POST /groups/{group_id}/people - Add person to group
-- POST /groups/people/bulk - Bulk add people to groups
-- DELETE /group/{group_id}/person/{name} - Remove person from group
-- DELETE /group/{group_id} - Delete group
-- GET /groups - Get all groups
+- `POST /groups/bulk` - Create multiple groups
+- `POST /groups/people/bulk` - Add multiple people to groups
+- `POST /group/{group_id}/person/{name}` - Add person to group
+- `DELETE /group/{group_id}/person/{name}` - Remove person from group
+- `DELETE /group/{group_id}` - Delete group
+- `GET /groups` - List all groups
 
-### Schedule
-- POST /schedule/{year}/{month} - Generate monthly schedule
-- GET /schedule - Get current schedule
-- GET /schedule/person/{name} - Get person's schedule
+### Schedules
+- `POST /schedule/{year}/{month}` - Generate monthly schedule
+- `GET /schedule` - Get current schedule
+- `GET /schedule/person/{name}` - Get person's schedule
 
 ### System
-- DELETE /reset - Reset all data
-- GET / - Root endpoint
-- GET /health - Health check
+- `DELETE /reset` - Reset all data
+- `GET /health` - Health check
+- `GET /` - API information
+
+## Error Handling
+
+The API uses standard HTTP status codes:
+- 200: Success
+- 400: Bad Request (invalid input)
+- 404: Not Found
+- 500: Server Error
+
+Custom exceptions are defined in `app.utils.exceptions` and are mapped to appropriate HTTP responses.
 
 ## Development
 
-### Project Structure
-```
-app/
-├── config/
-│   └── settings.py
-├── models/
-│   └── schemas.py
-├── services/
-│   └── scheduler.py
-├── utils/
-│   ├── exceptions.py
-│   └── logging.py
-└── main.py
-```
-
-### Testing
-
-Run tests using pytest:
+### Running Tests
 ```bash
 pytest
 ```
 
-## Error Handling
+### Code Coverage
+```bash
+coverage run -m pytest
+coverage report
+```
 
-The application includes custom exceptions:
-- GroupNotFoundException
-- PersonNotFoundException
-- InsufficientGroupMembersError
-- InvalidScheduleError
+## Design Decisions
+
+1. **Modular Structure**: Code is organized into logical modules for better maintainability.
+2. **Type Safety**: Extensive use of type hints and Pydantic models.
+3. **Configuration Management**: Environment-based configuration using pydantic-settings.
+4. **Error Handling**: Custom exceptions for clear error reporting.
+5. **Logging**: Comprehensive logging for debugging and monitoring.
+6. **Dependency Injection**: FastAPI's dependency injection for configuration and services.
+
+## Scheduling Algorithm
+
+The scheduling algorithm ensures:
+1. One person from each group is scheduled each day
+2. No person is scheduled on consecutive days
+3. Fair distribution of assignments
+4. Handling of edge cases (insufficient members, etc.)
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit changes
+4. Create a pull request
+
+## License
+
+MIT License 

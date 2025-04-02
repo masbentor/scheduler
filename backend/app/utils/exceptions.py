@@ -1,15 +1,23 @@
-class GroupNotFoundException(Exception):
+class SchedulerException(Exception):
+    """Base exception for scheduler errors"""
+    pass
+
+class GroupNotFoundException(SchedulerException):
     """Raised when a group is not found"""
     pass
 
-class PersonNotFoundException(Exception):
-    """Raised when a person is not found in a group"""
+class PersonNotFoundException(SchedulerException):
+    """Raised when a person is not found"""
     pass
 
-class InsufficientGroupMembersError(Exception):
-    """Raised when there are not enough eligible members in a group for scheduling"""
+class InsufficientGroupMembersError(SchedulerException):
+    """Raised when a group doesn't have enough members"""
     pass
 
-class InvalidScheduleError(Exception):
-    """Raised when a schedule cannot be generated due to invalid conditions"""
+class InvalidScheduleError(SchedulerException):
+    """Raised when schedule generation fails"""
     pass
+
+class DuplicateAssignmentError(SchedulerException):
+    """Raised when trying to assign a person who is already assigned"""
+    pass 

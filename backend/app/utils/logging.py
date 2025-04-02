@@ -1,37 +1,42 @@
 import logging
 import sys
-from typing import Any, Dict
+from typing import Optional
+from pathlib import Path
 
-# Configure logging format
-log_format = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+def setup_logger(
+    name: str,
+    level: int = logging.INFO,
+    log_file: Optional[Path] = None
+) -> logging.Logger:
+    """Set up a logger with console and optional file handlers
+    
+    Args:
+        name: Name of the logger
+        level: Logging level
+        log_file: Optional path to log file
+        
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    # File handler if log_file specified
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    return logger
 
-# Create console handler
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_format)
-
-# Create file handler
-file_handler = logging.FileHandler('app.log')
-file_handler.setFormatter(log_format)
-
-# Create logger
-logger = logging.getLogger('scheduler')
-logger.setLevel(logging.INFO)
-
-# Add handlers
-logger.addHandler(console_handler)
-logger.addHandler(file_handler)
-
-# Helper functions for structured logging
-def log_info(message: str, extra: Dict[str, Any] = None) -> None:
-    """Log info message with optional extra fields"""
-    logger.info(message, extra=extra or {})
-
-def log_error(message: str, extra: Dict[str, Any] = None) -> None:
-    """Log error message with optional extra fields"""
-    logger.error(message, extra=extra or {})
-
-def log_warning(message: str, extra: Dict[str, Any] = None) -> None:
-    """Log warning message with optional extra fields"""
-    logger.warning(message, extra=extra or {})
+# Create default application logger
+logger = setup_logger('scheduler') 
