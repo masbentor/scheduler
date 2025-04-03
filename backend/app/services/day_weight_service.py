@@ -43,35 +43,51 @@ class DayWeightService:
             raise ValueError("Weight must be positive")
         self._weights[day_type] = weight
     
-    def calculate_weight(self, target_date: date, holidays: List[Holiday]) -> float:
-        """Calculate the weight for a specific date
+    def get_day_type(self, target_date: date, holidays: List[Holiday] = None) -> DayType:
+        """Determine the type of a given day
+        
+        Args:
+            target_date: Date to check
+            holidays: Optional list of holidays to consider
+            
+        Returns:
+            DayType: Type of the day
+        """
+        # Check if it's a holiday
+        if holidays:
+            for holiday in holidays:
+                if holiday.start_date <= target_date <= holiday.end_date:
+                    # Check if it's a middle day of a long weekend
+                    long_weekends = self.long_weekend_service.find_long_weekends(
+                        holidays, target_date.year, target_date.month
+                    )
+                    for long_weekend in long_weekends:
+                        if (long_weekend['start_date'] < target_date < long_weekend['end_date']):
+                            return DayType.LONG_WEEKEND_MIDDLE
+                    return DayType.HOLIDAY
+        
+        # Check weekday
+        weekday = target_date.weekday()
+        if weekday == 4:  # Friday
+            return DayType.FRIDAY
+        elif weekday >= 5:  # Saturday or Sunday
+            return DayType.WEEKEND
+        else:
+            return DayType.REGULAR
+            
+    def calculate_weight(self, target_date: date, day_type: DayType = None) -> float:
+        """Calculate the weight for a given day
         
         Args:
             target_date: Date to calculate weight for
-            holidays: List of holidays to consider
+            day_type: Optional pre-determined day type
             
         Returns:
-            float: Weight for the date
+            float: Calculated weight for the day
         """
-        # Check if it's a middle day of a long holiday period
-        if self.long_weekend_service.is_middle_day(target_date, holidays):
-            return self.get_base_weight(DayType.LONG_WEEKEND_MIDDLE)
-        
-        # Check if it's a holiday
-        for holiday in holidays:
-            if target_date in holiday.get_dates():
-                return self.get_base_weight(DayType.HOLIDAY)
-        
-        # Check if it's a weekend
-        if self.is_weekend(target_date):
-            return self.get_base_weight(DayType.WEEKEND)
-        
-        # Check if it's a Friday
-        if self.is_friday(target_date):
-            return self.get_base_weight(DayType.FRIDAY)
-        
-        # Regular day
-        return self.get_base_weight(DayType.REGULAR)
+        if day_type is None:
+            day_type = self.get_day_type(target_date)
+        return self.get_base_weight(day_type)
     
     def is_weekend(self, target_date: date) -> bool:
         """Check if a date is a weekend (Saturday or Sunday)

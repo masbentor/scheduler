@@ -2,8 +2,11 @@ from fastapi import FastAPI, HTTPException, Path, Depends, Query, status, Upload
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Optional, Union
 from datetime import date
+import calendar
 from sqlalchemy.orm import Session
 import traceback
+import asyncio
+import logging
 
 from .services.scheduler import SchedulerService
 from .services.holiday_service import HolidayService
@@ -25,12 +28,17 @@ from .utils.exceptions import (
 )
 from .utils.logging import logger
 from .config.database import get_db, Base, engine
+from .models.request import BulkGroupsRequest, BulkPeopleAssignmentRequest
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-scheduler = SchedulerService()
+logger = logging.getLogger(__name__)
+
+def get_scheduler(db: Session = Depends(get_db)) -> SchedulerService:
+    """Get scheduler service instance with database session"""
+    return SchedulerService(db)
 
 def configure_cors(app: FastAPI, settings: Settings):
     """Configure CORS middleware"""
@@ -40,6 +48,8 @@ def configure_cors(app: FastAPI, settings: Settings):
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        max_age=3600,  # Cache preflight requests for 1 hour
+        expose_headers=["*"]  # Expose all headers to the browser
     )
 
 # Configure application
@@ -152,24 +162,33 @@ async def get_holidays(
     try:
         holiday_service = HolidayService(db)
         
-        if year is not None:
-            db_holidays = holiday_service.get_holidays_by_year(year)
-        elif start_date is not None and end_date is not None:
-            db_holidays = holiday_service.get_holidays_by_date_range(start_date, end_date)
-        else:
-            # Default to current year if no filters provided
-            current_year = date.today().year
-            db_holidays = holiday_service.get_holidays_by_year(current_year)
-        
-        return [
-            {
-                "id": holiday.id,
-                "start_date": holiday.start_date,
-                "end_date": holiday.end_date,
-                "name": holiday.name
-            }
-            for holiday in db_holidays
-        ]
+        # Use async timeout
+        try:
+            async with asyncio.timeout(10):  # 10 second timeout
+                if year is not None:
+                    db_holidays = holiday_service.get_holidays_by_year(year)
+                elif start_date is not None and end_date is not None:
+                    db_holidays = holiday_service.get_holidays_by_date_range(start_date, end_date)
+                else:
+                    # Default to current year if no filters provided
+                    current_year = date.today().year
+                    db_holidays = holiday_service.get_holidays_by_year(current_year)
+                
+                # Convert to list immediately to avoid lazy loading issues
+                return [
+                    {
+                        "id": holiday.id,
+                        "start_date": holiday.start_date,
+                        "end_date": holiday.end_date,
+                        "name": holiday.name
+                    }
+                    for holiday in db_holidays
+                ]
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Request timed out while retrieving holidays"
+            )
     except Exception as e:
         logger.error(f"Error retrieving holidays: {str(e)}")
         logger.error(traceback.format_exc())
@@ -275,18 +294,18 @@ async def delete_holiday(
 
 # Original Scheduler Endpoints
 
-@app.post("/groups/bulk")
-async def bulk_add_groups(
-    data: BulkGroupsCreate,
-    settings: Settings = Depends(get_settings)
-) -> Dict[str, Dict[str, bool]]:
+@app.post("/groups/bulk", status_code=status.HTTP_201_CREATED)
+def bulk_add_groups(request: BulkGroupsRequest, db: Session = Depends(get_db)):
     """Add multiple groups at once"""
-    logger.info("Processing bulk group creation request")
-    results = scheduler.bulk_add_groups(data.group_ids)
-    return {
-        "message": "Bulk group creation completed",
-        "results": results
-    }
+    try:
+        scheduler = SchedulerService(db)
+        success = scheduler.bulk_add_groups(request.group_ids)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to add groups")
+        return {"message": "Groups created successfully"}
+    except Exception as e:
+        logger.error(f"Error adding groups: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error adding groups: {str(e)}")
 
 @app.post("/groups/{group_id}/people")
 async def add_person_to_group(
@@ -296,6 +315,7 @@ async def add_person_to_group(
 ) -> Dict[str, str]:
     """Add a person to a group"""
     try:
+        scheduler = SchedulerService(db)
         scheduler.add_person_to_group(
             person.name, 
             group_id,
@@ -306,86 +326,97 @@ async def add_person_to_group(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/groups/people/bulk")
-async def bulk_add_people_to_groups(
-    data: BulkPeopleAssignment,
-    settings: Settings = Depends(get_settings)
-) -> Dict[str, Dict[str, List[str]]]:
-    """Add multiple people to multiple groups at once"""
-    logger.info("Processing bulk people assignment request")
+@app.post("/groups/people/bulk", status_code=status.HTTP_201_CREATED)
+def bulk_add_people_to_groups(request: BulkPeopleAssignmentRequest, db: Session = Depends(get_db)):
+    """Add multiple people to groups with their constraints"""
     try:
-        results = scheduler.bulk_add_people_to_groups(data.assignments)
-        return {
-            "message": "Bulk people assignment completed",
-            "results": results
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        scheduler = SchedulerService(db)
+        success = scheduler.bulk_add_people_to_groups(request.assignments)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to add people to groups")
+        return {"message": "People added to groups successfully"}
     except Exception as e:
-        logger.error(f"Error processing bulk assignment: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error processing bulk assignment")
+        logger.error(f"Error adding people to groups: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error adding people to groups: {str(e)}")
 
-@app.delete("/group/{group_id}/person/{name}")
-async def remove_person(
-    group_id: str = Path(..., description="Group ID - can be any string"),
-    name: str = Path(..., description="Person name"),
-    settings: Settings = Depends(get_settings)
-) -> Dict[str, str]:
-    """Remove a person from a group"""
-    try:
-        scheduler.remove_person_from_group(name, group_id)
-        return {"message": f"Removed {name} from group {group_id}"}
-    except (GroupNotFoundException, PersonNotFoundException) as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-@app.delete("/group/{group_id}")
+@app.delete("/groups/{group_id}")
 async def delete_group(
-    group_id: str = Path(..., description="Group ID - can be any string"),
-    settings: Settings = Depends(get_settings)
+    group_id: str,
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
 ) -> Dict[str, str]:
     """Delete a group"""
-    try:
-        scheduler.delete_group(group_id)
-        return {"message": f"Deleted group {group_id}"}
-    except GroupNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    if scheduler.delete_group(group_id):
+        return {"message": f"Group {group_id} deleted successfully"}
+    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+
+@app.delete("/groups/{group_id}/people/{name}")
+async def remove_person_from_group(
+    group_id: str,
+    name: str,
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
+) -> Dict[str, str]:
+    """Remove a person from a group"""
+    if scheduler.remove_person_from_group(name, group_id):
+        return {"message": f"Removed {name} from group {group_id}"}
+    raise HTTPException(status_code=404, detail=f"Person {name} or group {group_id} not found")
 
 @app.get("/groups")
-async def get_groups(
-    settings: Settings = Depends(get_settings)
-) -> Dict[str, Group]:
+def get_all_groups(db: Session = Depends(get_db)):
     """Get all groups and their members"""
-    return scheduler.get_groups()
+    try:
+        scheduler = SchedulerService(db)
+        return {"groups": scheduler._groups}
+    except Exception as e:
+        logger.error(f"Error getting groups: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting groups: {str(e)}")
 
 @app.post("/schedule/{year}/{month}")
-async def generate_schedule(
-    year: int,
-    month: int,
-    settings: Settings = Depends(get_settings)
+async def generate_monthly_schedule(
+    year: int = Path(..., description="Year to generate schedule for"),
+    month: int = Path(..., description="Month to generate schedule for"),
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler),
+    holiday_service: HolidayService = Depends(lambda db=Depends(get_db): HolidayService(db))
 ) -> Schedule:
-    """Generate a monthly schedule"""
+    """Generate a schedule for the specified month"""
     try:
-        return scheduler.generate_monthly_schedule(year, month)
+        # Get holidays for the month to determine day types
+        holidays = holiday_service.get_holidays_by_date_range(
+            date(year, month, 1),
+            date(year, month, calendar.monthrange(year, month)[1])
+        )
+        return scheduler.generate_monthly_schedule(year, month, holidays)
     except (InvalidScheduleError, InsufficientGroupMembersError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating schedule: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error generating schedule")
 
 @app.get("/schedule")
 async def get_schedule(
-    settings: Settings = Depends(get_settings)
+    year: Optional[int] = Query(None, description="Filter by year"),
+    month: Optional[int] = Query(None, description="Filter by month"),
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
 ) -> Schedule:
-    """Get the current schedule"""
-    schedule = scheduler.get_schedule()
+    """Get the current schedule with optional year/month filtering"""
+    schedule = scheduler.get_schedule(year, month)
     if not schedule:
-        raise HTTPException(status_code=404, detail="No schedule has been generated yet")
+        raise HTTPException(status_code=404, detail="No schedule found for the specified criteria")
     return schedule
 
 @app.get("/schedule/person/{name}")
 async def get_person_schedule(
     name: str,
-    settings: Settings = Depends(get_settings)
+    year: Optional[int] = Query(None, description="Filter by year"),
+    month: Optional[int] = Query(None, description="Filter by month"),
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
 ) -> Dict[str, List[str]]:
-    """Get a person's schedule"""
-    dates = scheduler.get_person_schedule(name)
+    """Get a person's schedule with optional year/month filtering"""
+    dates = scheduler.get_person_schedule(name, year, month)
     if not dates:
         raise HTTPException(status_code=404, detail=f"No schedules found for {name}")
     return {"dates": dates}
@@ -413,4 +444,63 @@ async def read_root(
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
     """Health check endpoint"""
-    return {"status": "healthy"} 
+    return {"status": "healthy"}
+
+@app.get("/fairness/metrics/{person}")
+async def get_person_fairness_metrics(
+    person: str,
+    group_id: str = Query(..., description="Group ID to get metrics for"),
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
+) -> Dict:
+    """Get fairness metrics for a person in a group"""
+    stats = scheduler.assignment_history.get_person_stats(person, group_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail=f"No statistics found for {person} in group {group_id}")
+    return stats.model_dump()
+
+@app.get("/fairness/metrics/group/{group_id}")
+async def get_group_fairness_metrics(
+    group_id: str,
+    settings: Settings = Depends(get_settings),
+    scheduler: SchedulerService = Depends(get_scheduler)
+) -> Dict:
+    """Get fairness metrics for an entire group"""
+    metrics = scheduler.assignment_history.get_fairness_metrics(group_id)
+    if not metrics:
+        raise HTTPException(status_code=404, detail=f"No metrics found for group {group_id}")
+    return metrics
+
+@app.get("/groups/{group_id}/people")
+def get_group_members(group_id: str, db: Session = Depends(get_db)):
+    """Get all members of a group"""
+    try:
+        scheduler = SchedulerService(db)
+        if group_id not in scheduler._groups:
+            raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+        return {"members": scheduler._groups[group_id]}
+    except Exception as e:
+        logger.error(f"Error getting group members: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting group members: {str(e)}")
+
+@app.get("/people/{person_name}/constraints")
+def get_person_constraints(person_name: str, db: Session = Depends(get_db)):
+    """Get constraints for a person"""
+    try:
+        scheduler = SchedulerService(db)
+        if person_name not in scheduler._person_constraints:
+            raise HTTPException(status_code=404, detail=f"No constraints found for {person_name}")
+        return {"constraints": scheduler._person_constraints[person_name]}
+    except Exception as e:
+        logger.error(f"Error getting person constraints: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting person constraints: {str(e)}")
+
+@app.get("/people/constraints")
+def get_all_constraints(db: Session = Depends(get_db)):
+    """Get constraints for all people"""
+    try:
+        scheduler = SchedulerService(db)
+        return {"constraints": scheduler._person_constraints}
+    except Exception as e:
+        logger.error(f"Error getting constraints: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting constraints: {str(e)}") 
